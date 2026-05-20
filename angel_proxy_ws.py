@@ -2425,3 +2425,24 @@ window.addEventListener('resize', brainDrawChart);
 </script>
 </body>
 </html>"""
+
+if __name__ == "__main__":
+    import os
+    print("=" * 60)
+    print("  Angel One Proxy — WebSocket Edition")
+    print("  HTTP  → http://localhost:5050")
+    print("  WS    → ws://localhost:5050  (Socket.IO)")
+    print("  Keep this window open while using the app")
+    print("=" * 60)
+    print()
+    print("  Install deps:")
+    print("  pip install flask flask-cors flask-socketio")
+    print("  pip install websocket-client smartapi-python pyotp pytz")
+    print()
+
+    # Start tick broadcast loop
+    threading.Thread(target=tick_broadcast_loop, daemon=True).start()
+
+    # Run with SocketIO
+    port = int(os.environ.get("PORT", 5050))
+    sio.run(app, host="0.0.0.0", port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
