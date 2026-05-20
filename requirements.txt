@@ -4,5 +4,5 @@ flask-socketio
 requests
 pyotp
 websocket-client
-smartapi-python
+SmartApi-python
 pytz
