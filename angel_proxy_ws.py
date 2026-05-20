@@ -1969,4 +1969,6 @@ if __name__ == "__main__":
     threading.Thread(target=tick_broadcast_loop, daemon=True).start()
 
     # Run with SocketIO (uses threading mode — no eventlet/gevent needed)
-    sio.run(app, host="0.0.0.0", port=5050, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)
+    import os
+port = int(os.environ.get("PORT", 5050))
+sio.run(app, host="0.0.0.0", port=port, debug=False, use_reloader=False, allow_unsafe_werkzeug=True)

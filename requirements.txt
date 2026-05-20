@@ -1,0 +1,8 @@
+flask
+flask-cors
+flask-socketio
+requests
+pyotp
+websocket-client
+smartapi-python
+pytz
