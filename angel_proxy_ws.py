@@ -1527,7 +1527,7 @@ table.t-pe td, table.t-pe th{white-space:nowrap;}
 <script>
 // BASE = '' means same origin — angel_proxy_ws serves this page AND the API routes
 const BASE = '';
-let S = { sym:'NIFTY', expiry:'', autoTimer:null, spot:0 };
+let S = { sym:'NIFTY', expiry:'', autoTimer:null, spot:0, expiriesLoaded:false, expiriesFor:'', chainLoaded:false };
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const $  = x => document.getElementById(x);
@@ -1568,11 +1568,8 @@ async function doLogin() {
 
     initSocket();   // connect Socket.IO (works even in polling mode for tick_batch)
 
-    // If no WS, start auto-polling every 5s as fallback
-    if (!sdkOk || !ftOk) {
-      setWsDot('wait', 'polling 5s');
-      S.pollTimer = setInterval(() => { if (S.expiry) loadChain(); }, 5000);
-    }
+    // No auto-polling — WebSocket handles live updates
+    // Manual refresh button still available
     setTimeout(() => {
       $('loginWrap').style.display = 'none';
       $('mainArea').style.display  = 'block';
@@ -1587,7 +1584,12 @@ async function doLogin() {
 
 // ── Symbol ────────────────────────────────────────────────────────────────────
 function selSym(sym, el) {
-  S.sym=sym; S.expiry='';
+  if (S.sym === sym) return; // same symbol — ignore
+  S.sym           = sym;
+  S.expiry        = '';
+  S.expiriesLoaded= false;
+  S.expiriesFor   = '';
+  S.chainLoaded   = false;
   document.querySelectorAll('.sym-tab').forEach(t=>t.classList.remove('active'));
   el.classList.add('active');
   loadExpiries();
@@ -1595,11 +1597,16 @@ function selSym(sym, el) {
 
 // ── Expiries ──────────────────────────────────────────────────────────────────
 async function loadExpiries() {
+  // Guard: don't re-enter if expiries already displayed
+  if (S.expiriesLoaded && S.sym === S.expiriesFor) return;
+
   try {
     const st = await apiGet('/status');
     if (!st.instruments_loaded) {
       $('expBtns').innerHTML='<span style="color:var(--atm);font-size:11px"><span class="spin"></span>Loading instruments…</span>';
-      setTimeout(loadExpiries, 2000); return;
+      // Retry but only if we haven't loaded yet
+      if (!S.expiriesLoaded) setTimeout(loadExpiries, 2000);
+      return;
     }
     const d   = await apiGet(`/expiries/${S.sym}`);
     // Sort ascending by actual date (format: 20MAY2026)
@@ -1607,6 +1614,8 @@ async function loadExpiries() {
     const toDate = e => { const m=e.match(/^(\d{2})([A-Z]{3})(\d{4})$/); return m?new Date(+m[3],MON[m[2]],+m[1]):new Date(0); };
     const exps = (d.expiries||[]).sort((a,b)=>toDate(a)-toDate(b)).slice(0,15);
     const box  = $('expBtns'); box.innerHTML='';
+    S.expiriesLoaded = true;
+    S.expiriesFor    = S.sym;
     exps.forEach((e,i)=>{
       const b=document.createElement('button');
       b.className='exp-btn'+(i===0?' active':'');
@@ -1616,21 +1625,28 @@ async function loadExpiries() {
         b.classList.add('active'); S.expiry=e; loadChain();
       };
       box.appendChild(b);
-      if(i===0){ S.expiry=e; loadChain(); }
+      if(i===0 && !S.chainLoaded){ S.expiry=e; loadChain(); }
     });
   } catch(e){ console.error('Expiries:',e); }
 }
 
 // ── Load chain ────────────────────────────────────────────────────────────────
+let _chainLoading = false;
 async function loadChain() {
   if (!S.expiry) return;
+  if (_chainLoading) return;   // prevent concurrent fetches
+  _chainLoading = true;
   const wrap=$('chainWrap'), btn=$('refBtn');
   btn.classList.add('busy'); btn.innerHTML='<span class="spin"></span>Loading…';
-  wrap.innerHTML='<div class="state-msg"><span class="spin" style="width:22px;height:22px;border-width:3px"></span><br>Fetching chain…</div>';
+  // Only show loading spinner on first load — don't clear chain on refresh
+  if (!wrap.querySelector('.chain-outer')) {
+    wrap.innerHTML='<div class="state-msg"><span class="spin" style="width:22px;height:22px;border-width:3px"></span><br>Fetching chain…</div>';
+  }
   try {
     const d = await apiGet(`/option-chain/${S.sym}/${S.expiry}`);
     if (d.status!=='ok') throw new Error(d.message||'Chain fetch failed');
-    S.spot = d.data.spot;
+    S.spot        = d.data.spot;
+    S.chainLoaded = true;
     renderStats(d.data);
     renderChain(d.data);
     subscribeTokens(d.data.chain);   // subscribe WS ticks
@@ -1644,6 +1660,7 @@ async function loadChain() {
     wrap.innerHTML=`<div class="state-msg"><span class="ico">⚠️</span>${e.message}</div>`;
   } finally {
     btn.classList.remove('busy'); btn.innerHTML='⟳ Refresh';
+    _chainLoading = false;
   }
 }
 
@@ -1791,11 +1808,22 @@ function peCells(q,barW,strike){
 
 // ── Auto refresh ──────────────────────────────────────────────────────────────
 function toggleAuto(){
-  if(S.autoTimer){clearInterval(S.autoTimer);S.autoTimer=null;}
+  // Always clear existing timer first
+  if(S.autoTimer){ clearInterval(S.autoTimer); S.autoTimer=null; }
   if($('autoChk').checked){
-    S.autoTimer=setInterval(loadChain,parseInt($('autoSel').value)*1000);
+    const secs = parseInt($('autoSel').value) * 1000;
+    S.autoTimer = setInterval(loadChain, secs);
+    console.log('Auto refresh started:', secs/1000, 's');
   }
 }
+
+// When auto-interval dropdown changes, restart timer if auto is on
+document.addEventListener('DOMContentLoaded', () => {
+  const sel = document.getElementById('autoSel');
+  if (sel) sel.addEventListener('change', () => {
+    if (document.getElementById('autoChk')?.checked) toggleAuto();
+  });
+});
 
 // ── WebSocket — live tick updates ────────────────────────────────────────────
 // token → { side:'ce'|'pe', strike } — built when chain renders
@@ -1805,14 +1833,39 @@ let wsReady  = false;
 
 function initSocket() {
   if (socket) { socket.disconnect(); socket = null; }
-  socket = io('/', { transports: ['websocket', 'polling'] });
+  socket = io('/', {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionDelay: 3000,
+    reconnectionDelayMax: 10000,
+    reconnectionAttempts: 10,
+    timeout: 20000,
+  });
 
   socket.on('connect', () => {
     setWsDot('live', 'LIVE');
     wsReady = true;
-    // Re-subscribe current tokens if chain already loaded
+    // Re-subscribe all tokens — NO page reload, just resubscribe
     const tokens = Object.keys(tokenMap);
-    if (tokens.length) socket.emit('subscribe', { tokens });
+    if (tokens.length) {
+      socket.emit('subscribe', { tokens });
+      setWsDot('live', `LIVE · ${tokens.length} tokens`);
+    }
+  });
+
+  socket.on('reconnect', (attempt) => {
+    console.log('WS reconnected after', attempt, 'attempts');
+    wsReady = true;
+    // Only resubscribe — never reload the chain on reconnect
+    const tokens = Object.keys(tokenMap);
+    if (tokens.length) {
+      socket.emit('subscribe', { tokens });
+      setWsDot('live', `LIVE · ${tokens.length} tokens`);
+    }
+  });
+
+  socket.on('reconnect_attempt', () => {
+    setWsDot('wait', 'reconnecting…');
   });
 
   socket.on('disconnect', () => { setWsDot('dead', 'disconnected'); wsReady = false; });
