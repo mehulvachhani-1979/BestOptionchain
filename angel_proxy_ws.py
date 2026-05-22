@@ -1924,6 +1924,10 @@ function renderChain(data) {
       tr.addEventListener('mouseenter',()=>syncHover(tr.dataset.strike, true));
       tr.addEventListener('mouseleave',()=>syncHover(tr.dataset.strike, false));
     });
+
+  // Market Brain hook (was previously a recursive wrapper — fixed)
+  window._lastChainData = data;
+  if (typeof brainOpen !== 'undefined' && brainOpen) setTimeout(brainAnalyze, 300);
 }
 
 function syncHover(strike, on) {
@@ -2402,13 +2406,7 @@ function brainDrawChart() {
   ctx.fillText(bHistory[bHistory.length-1].time, w-pad.r, h-3);
 }
 
-// Hook into existing loadChain — analyze after chain loads
-const _origRenderChain = renderChain;
-function renderChain(data) {
-  _origRenderChain(data);
-  window._lastChainData = data;
-  if (brainOpen) setTimeout(brainAnalyze, 300);
-}
+// Brain hook — merged into renderChain above (avoids JS hoisting recursion bug)
 
 // Hook into applyTick — re-analyze brain every 30 ticks
 let _tickCount = 0;
