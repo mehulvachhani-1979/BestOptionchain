@@ -1373,31 +1373,16 @@ body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-
 .stat-v{font-family:var(--mono);font-size:12px;font-weight:700;}
 
 /* ── Chain layout: CE scrolls left | Strike fixed | PE scrolls right ── */
-.chain-outer{display:flex;width:100%;overflow:hidden;position:relative;}
+/* ── Single unified chain table — guarantees perfect row alignment ── */
+.chain-outer{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+.chain-outer::-webkit-scrollbar{height:4px;}
+.chain-outer::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 
-/* CE pane — scrolls horizontally, content right-aligned so LTP stays closest to strike */
-.ce-pane{flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch;}
-.ce-pane::-webkit-scrollbar{display:none;}
-
-/* Strike column — fixed center, never scrolls */
-.strike-pane{flex:0 0 72px;z-index:10;background:var(--card);
-  border-left:1px solid var(--border2);border-right:1px solid var(--border2);}
-
-/* PE pane — scrolls horizontally, content left-aligned so LTP stays closest to strike */
-.pe-pane{flex:1;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
-  scrollbar-width:none;-webkit-overflow-scrolling:touch;}
-.pe-pane::-webkit-scrollbar{display:none;}
-
-/* Sync row heights — each pane has its own table */
-table.t-ce, table.t-strike, table.t-pe{
-  border-collapse:collapse;font-size:11px;font-family:var(--mono);width:100%;}
-table.t-ce{min-width:320px;}   /* wide enough to hold all CE cols */
-table.t-pe{min-width:320px;}
-
-/* CE table — columns read R→L (OI far left, LTP rightmost/nearest strike) */
-table.t-ce td, table.t-ce th{white-space:nowrap;}
-table.t-pe td, table.t-pe th{white-space:nowrap;}
+table.t-chain{
+  border-collapse:collapse;font-size:11px;font-family:var(--mono);
+  width:100%;min-width:520px;table-layout:auto;}
+table.t-chain td, table.t-chain th{white-space:nowrap;padding:0;}
 
 /* Header group row */
 .g-ce{background:rgba(33,150,243,.13);color:var(--ce);font-family:var(--cond);
@@ -1423,10 +1408,10 @@ table.t-pe td, table.t-pe th{white-space:nowrap;}
 .sc{background:var(--card);text-align:center;padding:4px 6px;border-bottom:1px solid var(--border);
   font-family:var(--cond);font-size:12px;font-weight:800;color:var(--atm);white-space:nowrap;}
 
-/* ATM highlight */
-.atm-ce td.cc{background:rgba(240,180,41,.05)!important;border-top:1px solid rgba(240,180,41,.5);border-bottom:1px solid rgba(240,180,41,.5)!important;}
-.atm-pe td.pc{background:rgba(240,180,41,.05)!important;border-top:1px solid rgba(240,180,41,.5);border-bottom:1px solid rgba(240,180,41,.5)!important;}
-.atm-st td.sc{background:rgba(240,180,41,.16)!important;color:#fff;border-top:1px solid rgba(240,180,41,.5);border-bottom:1px solid rgba(240,180,41,.5)!important;}
+/* ATM highlight — single unified row */
+.atm-row td{background:rgba(240,180,41,.06)!important;border-top:1px solid rgba(240,180,41,.5);border-bottom:1px solid rgba(240,180,41,.5)!important;}
+.atm-row td.sc{background:rgba(240,180,41,.18)!important;color:#fff;}
+.row-hover td{background:rgba(255,255,255,.04)!important;}
 
 .atm-badge{background:var(--atm);color:#000;font-size:7px;font-weight:800;
   padding:1px 4px;border-radius:2px;letter-spacing:1px;margin-left:3px;vertical-align:middle;}
@@ -1864,68 +1849,70 @@ function renderChain(data) {
   const mxCE=Math.max(...ch.map(r=>r.call?.oi||0),1);
   const mxPE=Math.max(...ch.map(r=>r.put?.oi||0),1);
 
-  // CE cols: OI far left, LTP nearest strike
-  const CE_COLS=['OI','P.Close','Low','High','Open','Chg%','Chg','LTP'];
-  // PE cols: LTP nearest strike, OI far right
-  const PE_COLS=['LTP','Chg','Chg%','Open','High','Low','P.Close','OI'];
-
-  // Build 3 separate tables: CE | Strike | PE
-  let ceH=`<table class="t-ce"><thead>
-    <tr><th colspan="${CE_COLS.length}" class="g-ce">CALL — CE</th></tr>
-    <tr>${CE_COLS.map(c=>`<th class="h-ce">${c}</th>`).join('')}</tr>
-  </thead><tbody>`;
-
-  let stH=`<table class="t-strike"><thead>
-    <tr><th class="g-st">STK</th></tr>
-    <tr><th class="h-st">STRIKE</th></tr>
-  </thead><tbody>`;
-
-  let peH=`<table class="t-pe"><thead>
-    <tr><th colspan="${PE_COLS.length}" class="g-pe">PUT — PE</th></tr>
-    <tr>${PE_COLS.map(c=>`<th class="h-pe">${c}</th>`).join('')}</tr>
-  </thead><tbody>`;
+  // ── Single unified table: CE cols | STRIKE | PE cols ──────────────────────
+  // All cells in same <tr> → row heights always perfectly in sync
+  let html = `<div class="chain-outer"><table class="t-chain">
+    <thead>
+      <tr>
+        <th colspan="8" class="g-ce">CALL — CE</th>
+        <th class="g-st">STRIKE</th>
+        <th colspan="8" class="g-pe">PUT — PE</th>
+      </tr>
+      <tr>
+        <th class="h-ce">OI</th>
+        <th class="h-ce">P.Close</th>
+        <th class="h-ce">Low</th>
+        <th class="h-ce">High</th>
+        <th class="h-ce">Open</th>
+        <th class="h-ce">Chg%</th>
+        <th class="h-ce">Chg</th>
+        <th class="h-ce">LTP</th>
+        <th class="h-st">STK</th>
+        <th class="h-pe">LTP</th>
+        <th class="h-pe">Chg</th>
+        <th class="h-pe">Chg%</th>
+        <th class="h-pe">Open</th>
+        <th class="h-pe">High</th>
+        <th class="h-pe">Low</th>
+        <th class="h-pe">P.Close</th>
+        <th class="h-pe">OI</th>
+      </tr>
+    </thead><tbody>`;
 
   for(const row of ch){
     const{strike,call:c,put:p}=row;
     const isATM=strike===atmS;
     const cbW=Math.round(((c?.oi||0)/mxCE)*48);
     const pbW=Math.round(((p?.oi||0)/mxPE)*48);
-    const ac=isATM?'atm-ce':'', ap=isATM?'atm-pe':'', as2=isATM?'atm-st':'';
-
-    ceH+=`<tr class="${ac}" data-strike="${strike}">${ceCells(c,cbW,strike)}</tr>`;
-    stH+=`<tr class="${as2}" data-strike="${strike}"><td class="sc">${strike}${isATM?'<span class="atm-badge">ATM</span>':''}</td></tr>`;
-    peH+=`<tr class="${ap}" data-strike="${strike}">${peCells(p,pbW,strike)}</tr>`;
+    const atmCls=isATM?' class="atm-row"':'';
+    html+=`<tr${atmCls} data-strike="${strike}">
+      ${ceCells(c,cbW,strike)}
+      <td class="sc">${strike}${isATM?'<span class="atm-badge">ATM</span>':''}</td>
+      ${peCells(p,pbW,strike)}
+    </tr>`;
   }
+  html+=`</tbody></table></div>`;
+  $('chainWrap').innerHTML=html;
 
-  ceH+=`</tbody></table>`;
-  stH+=`</tbody></table>`;
-  peH+=`</tbody></table>`;
-
-  $('chainWrap').innerHTML=`
-    <div class="chain-outer">
-      <div class="ce-pane" id="cePane">${ceH}</div>
-      <div class="strike-pane">${stH}</div>
-      <div class="pe-pane" id="pePane">${peH}</div>
-    </div>`;
-
-  // Scroll CE pane to right (so LTP column is visible near strike)
-  const cp=$('cePane');
-  if(cp) cp.scrollLeft=cp.scrollWidth;
-
-  // Scroll ATM row into view
+  // Scroll so ATM + LTP columns visible — scroll to center (strike column)
   requestAnimationFrame(()=>{
-    const atmRow=document.querySelector('[data-strike="'+atmS+'"]');
+    const outer=$('chainWrap').querySelector('.chain-outer');
+    const atmRow=document.querySelector('tr[data-strike="'+atmS+'"]');
     if(atmRow) atmRow.scrollIntoView({block:'center',behavior:'smooth'});
+    // Scroll horizontally so strike column is centered
+    if(outer){
+      const tw=outer.scrollWidth, vw=outer.clientWidth;
+      outer.scrollLeft=Math.max(0,(tw-vw)/2);
+    }
   });
 
-  // Row hover sync across 3 tables
-  document.querySelectorAll('.ce-pane tr[data-strike], .strike-pane tr[data-strike], .pe-pane tr[data-strike]')
-    .forEach(tr=>{
-      tr.addEventListener('mouseenter',()=>syncHover(tr.dataset.strike, true));
-      tr.addEventListener('mouseleave',()=>syncHover(tr.dataset.strike, false));
-    });
+  // Row hover sync (single table — just highlight same tr)
+  document.querySelectorAll('tr[data-strike]').forEach(tr=>{
+    tr.addEventListener('mouseenter',()=>tr.classList.add('row-hover'));
+    tr.addEventListener('mouseleave',()=>tr.classList.remove('row-hover'));
+  });
 
-  // Market Brain hook (was previously a recursive wrapper — fixed)
+  // Market Brain hook
   window._lastChainData = data;
   if (typeof brainOpen !== 'undefined' && brainOpen) setTimeout(brainAnalyze, 300);
 }
